@@ -45,7 +45,7 @@ pub struct App {
     path_input: String,
     scan: Option<ScanJob>,
     tree: Option<Tree>,
-    gen: u64,
+    r#gen: u64,
     view_root: u32,
     selected: u32,
     hover: u32,
@@ -107,7 +107,7 @@ impl App {
             path_input: String::new(),
             scan: None,
             tree: None,
-            gen: 0,
+            r#gen: 0,
             view_root: 0,
             selected: NONE,
             hover: NONE,
@@ -159,7 +159,7 @@ impl App {
         let tree = job.result.lock().unwrap().take();
         if let Some(t) = tree {
             self.tree = Some(t);
-            self.gen += 1;
+            self.r#gen += 1;
             self.view_root = 0;
             self.selected = NONE;
             self.highlight_ext = None;
@@ -244,9 +244,9 @@ impl App {
 
     fn ensure_analysis(&mut self) {
         if let Some(tree) = &self.tree {
-            let stale = self.analysis.as_ref().map_or(true, |a| a.root != self.view_root || a.gen != self.gen);
+            let stale = self.analysis.as_ref().map_or(true, |a| a.root != self.view_root || a.r#gen != self.r#gen);
             if stale {
-                self.analysis = Some(tree.analyze(self.view_root, self.gen, 300));
+                self.analysis = Some(tree.analyze(self.view_root, self.r#gen, 300));
             }
         }
     }
@@ -574,7 +574,7 @@ impl App {
     fn ui_treemap(&mut self, ui: &mut Ui, size: egui::Vec2, actions: &mut Vec<Action>) {
         let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
         let Some(tree) = &self.tree else { return };
-        let key = VizKey { gen: self.gen, root: self.view_root, rect: rect_key(rect), mode: self.color_mode, hl: self.highlight_ext };
+        let key = VizKey { r#gen: self.r#gen, root: self.view_root, rect: rect_key(rect), mode: self.color_mode, hl: self.highlight_ext };
         if self.treemap.as_ref().map_or(true, |t| t.key != key) {
             self.treemap = Some(Treemap::build(tree, key, rect));
         }
@@ -626,7 +626,7 @@ impl App {
     fn ui_sunburst(&mut self, ui: &mut Ui, size: egui::Vec2, actions: &mut Vec<Action>) {
         let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
         let Some(tree) = &self.tree else { return };
-        let key = VizKey { gen: self.gen, root: self.view_root, rect: rect_key(rect), mode: self.color_mode, hl: self.highlight_ext };
+        let key = VizKey { r#gen: self.r#gen, root: self.view_root, rect: rect_key(rect), mode: self.color_mode, hl: self.highlight_ext };
         if self.sunburst.as_ref().map_or(true, |s| s.key != key) {
             self.sunburst = Some(Sunburst::build(tree, key, rect));
         }
