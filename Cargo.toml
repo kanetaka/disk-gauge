@@ -13,7 +13,12 @@ eframe = "0.29"
 rayon = "1.10"
 rfd = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(not(windows))'.dependencies]
+sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
 
 [profile.release]
 opt-level = 3

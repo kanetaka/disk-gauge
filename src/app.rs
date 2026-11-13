@@ -1,4 +1,5 @@
 use crate::drives::{self, DriveInfo};
+use crate::platform;
 use crate::scan::{self, ScanJob};
 use crate::sunburst::Sunburst;
 use crate::tree::{Analysis, Tree, NONE};
@@ -9,7 +10,7 @@ use eframe::egui::{
     Sense, Shape, Stroke, Ui,
 };
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 
@@ -65,18 +66,10 @@ const TREE_CHILD_LIMIT: usize = 400;
 
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let candidates = [
-        r"C:\Windows\Fonts\meiryo.ttc",
-        r"C:\Windows\Fonts\YuGothM.ttc",
-        r"C:\Windows\Fonts\msgothic.ttc",
-    ];
-    for path in candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts.font_data.insert("jp".to_owned(), egui::FontData::from_owned(bytes));
-            fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "jp".to_owned());
-            fonts.families.entry(egui::FontFamily::Monospace).or_default().push("jp".to_owned());
-            break;
-        }
+    if let Some(bytes) = platform::japanese_font() {
+        fonts.font_data.insert("jp".to_owned(), egui::FontData::from_owned(bytes));
+        fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "jp".to_owned());
+        fonts.families.entry(egui::FontFamily::Monospace).or_default().push("jp".to_owned());
     }
     ctx.set_fonts(fonts);
 }
@@ -132,8 +125,7 @@ impl App {
         if self.scan.is_some() {
             return;
         }
-        let s = path.to_string_lossy().trim().trim_matches('"').to_string();
-        let path = if s.len() == 2 && s.ends_with(':') { PathBuf::from(format!("{}\\", s)) } else { PathBuf::from(s) };
+        let path = platform::normalize_input(&path.to_string_lossy());
         if !path.is_dir() {
             return;
         }
@@ -218,12 +210,12 @@ impl App {
             }
             Action::Reveal(id) => {
                 if let Some(t) = &self.tree {
-                    reveal_in_explorer(&t.path(id));
+                    platform::reveal(&t.path(id));
                 }
             }
             Action::OpenDir(id) => {
                 if let Some(t) = &self.tree {
-                    let _ = std::process::Command::new("explorer.exe").arg(t.path(id)).spawn();
+                    platform::open_dir(&t.path(id));
                 }
             }
             Action::CopyPath(id) => {
@@ -307,7 +299,7 @@ impl App {
                         if t.errors > 0 {
                             ui.separator();
                             ui.label(RichText::new(format!("アクセス不可 {}", fmt_count(t.errors))).color(WARN))
-                                .on_hover_text("権限がない等の理由で読み取れなかったフォルダ数です。\n管理者として実行すると減らせます。");
+                                .on_hover_text(platform::ACCESS_HINT);
                         }
                         if t.cancelled {
                             ui.separator();
@@ -738,13 +730,6 @@ fn stat(ui: &mut Ui, label: &str, value: String) {
     ui.label(RichText::new(value).strong().size(17.0));
 }
 
-fn reveal_in_explorer(path: &Path) {
-    use std::os::windows::process::CommandExt;
-    let _ = std::process::Command::new("explorer.exe")
-        .raw_arg(format!("/select,\"{}\"", path.display()))
-        .spawn();
-}
-
 fn node_menu(ui: &mut Ui, tree: &Tree, id: u32, actions: &mut Vec<Action>) {
     let n = tree.node(id);
     ui.label(RichText::new(tree.display_name(id)).strong());
@@ -763,7 +748,7 @@ fn node_menu(ui: &mut Ui, tree: &Tree, id: u32, actions: &mut Vec<Action>) {
         actions.push(Action::Locate(id));
         ui.close_menu();
     }
-    if ui.button("エクスプローラーで選択").clicked() {
+    if ui.button(platform::REVEAL_LABEL).clicked() {
         actions.push(Action::Reveal(id));
         ui.close_menu();
     }
@@ -855,8 +840,9 @@ fn drive_chip(ui: &mut Ui, d: &DriveInfo, enabled: bool) -> egui::Response {
         Stroke::new(1.0_f32, if hovered { ACCENT } else { Color32::from_gray(52) }),
     );
     let ratio = d.ratio();
-    p.text(rect.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, &d.root[..2], FontId::proportional(18.0), Color32::WHITE);
-    let tx = rect.left() + 44.0;
+    let name = p.text(rect.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, &d.name, FontId::proportional(18.0), Color32::WHITE);
+    // `C:` fits in the default column; mount point names (`home`, `Data`, …) may need more.
+    let tx = (rect.left() + 44.0).max(name.right() + 8.0).min(rect.right() - 60.0);
     let clip = p.with_clip_rect(rect.shrink(3.0));
     clip.text(pos2(tx, rect.top() + 10.0), Align2::LEFT_CENTER, d.display_label(), FontId::proportional(11.0), Color32::from_gray(175));
     clip.text(pos2(tx, rect.top() + 23.0), Align2::LEFT_CENTER, format!("空き {}", fmt_size(d.free)), FontId::proportional(11.0), Color32::from_gray(215));
@@ -865,7 +851,7 @@ fn drive_chip(ui: &mut Ui, d: &DriveInfo, enabled: bool) -> egui::Response {
     p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * ratio, bar.height())), 2.0, util::usage_color(ratio));
     resp.on_hover_text(format!(
         "{} {}  ({})\n使用 {} / {}  ({:.0}%)\nクリックで解析",
-        &d.root[..2],
+        d.root,
         d.display_label(),
         d.fs,
         fmt_size(d.used()),
@@ -895,7 +881,7 @@ fn drive_card(ui: &mut Ui, d: &DriveInfo, size: egui::Vec2) -> egui::Response {
 
     let x = rect.left() + 124.0;
     let clip = p.with_clip_rect(rect.shrink(4.0));
-    clip.text(pos2(x, rect.top() + 26.0), Align2::LEFT_CENTER, format!("{}  {}", &d.root[..2], d.display_label()), FontId::proportional(16.0), Color32::WHITE);
+    clip.text(pos2(x, rect.top() + 26.0), Align2::LEFT_CENTER, format!("{}  {}", d.name, d.display_label()), FontId::proportional(16.0), Color32::WHITE);
     clip.text(pos2(x, rect.top() + 48.0), Align2::LEFT_CENTER, &d.fs, FontId::proportional(11.0), DIM);
     clip.text(pos2(x, rect.top() + 72.0), Align2::LEFT_CENTER, format!("使用 {} / {}", fmt_size(d.used()), fmt_size(d.total)), FontId::proportional(12.5), Color32::from_gray(210));
     clip.text(pos2(x, rect.top() + 94.0), Align2::LEFT_CENTER, format!("空き {}", fmt_size(d.free)), FontId::proportional(12.5), col);

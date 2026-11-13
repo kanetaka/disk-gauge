@@ -2,6 +2,7 @@
 
 mod app;
 mod drives;
+mod platform;
 mod scan;
 mod sunburst;
 mod tree;
