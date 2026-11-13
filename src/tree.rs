@@ -51,7 +51,7 @@ pub struct Tree {
 /// Statistics for a subtree (the folder currently shown).
 pub struct Analysis {
     pub root: u32,
-    pub r#gen: u64,
+    pub generation: u64,
     /// (ext id, bytes, count), sorted by bytes desc.
     pub exts: Vec<(u16, u64, u64)>,
     pub top_files: Vec<u32>,
@@ -231,7 +231,7 @@ impl Tree {
         self.exts[n.ext as usize].color
     }
 
-    pub fn analyze(&self, root: u32, r#gen: u64, top_n: usize) -> Analysis {
+    pub fn analyze(&self, root: u32, generation: u64, top_n: usize) -> Analysis {
         let mut acc = vec![(0u64, 0u64); self.exts.len()];
         let mut heap: BinaryHeap<Reverse<(u64, u32)>> = BinaryHeap::with_capacity(top_n + 1);
         let mut stack = vec![root];
@@ -260,6 +260,6 @@ impl Tree {
             .map(|(i, a)| (i as u16, a.0, a.1))
             .collect();
         exts.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-        Analysis { root, r#gen, exts, top_files: top.into_iter().map(|x| x.1).collect() }
+        Analysis { root, generation, exts, top_files: top.into_iter().map(|x| x.1).collect() }
     }
 }

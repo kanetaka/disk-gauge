@@ -11,7 +11,7 @@ pub enum ColorMode {
 /// Everything a cached visualization depends on.
 #[derive(Clone, Copy, PartialEq)]
 pub struct VizKey {
-    pub r#gen: u64,
+    pub generation: u64,
     pub root: u32,
     pub rect: [i32; 4],
     pub mode: ColorMode,
