@@ -1,0 +1,22 @@
+[package]
+name = "disk_gauge"
+version = "2.0.0"
+edition = "2021"
+description = "Disk usage visualizer"
+
+[[bin]]
+name = "DiskGauge"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.29"
+rayon = "1.10"
+rfd = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
