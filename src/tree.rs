@@ -4,7 +4,7 @@ use eframe::egui::Color32;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const NONE: u32 = u32::MAX;
 
@@ -225,6 +225,41 @@ impl Tree {
             cur = p;
         }
         root
+    }
+
+    /// Node at `path`, if it is inside this tree.
+    pub fn find(&self, path: &Path) -> Option<u32> {
+        let rel = path.strip_prefix(&self.root_path).ok()?;
+        let mut cur = 0u32;
+        for comp in rel.components() {
+            let name = comp.as_os_str().to_string_lossy();
+            cur = self.children(cur).find(|&c| *self.node(c).name == *name)?;
+        }
+        Some(cur)
+    }
+
+    /// Converts the tree back into a [`RawNode`] tree, putting `replacement` in place of
+    /// node `target`. Folder sizes above `target` are recomputed.
+    pub fn splice(&self, target: u32, replacement: RawNode) -> RawNode {
+        let mut replacement = Some(replacement);
+        self.raw_of(0, target, &mut replacement)
+    }
+
+    fn raw_of(&self, id: u32, target: u32, replacement: &mut Option<RawNode>) -> RawNode {
+        let n = self.node(id);
+        if id == target {
+            if let Some(mut r) = replacement.take() {
+                r.name = n.name.to_string();
+                return r;
+            }
+        }
+        let children: Vec<RawNode> = if n.is_dir {
+            self.children(id).map(|c| self.raw_of(c, target, replacement)).collect()
+        } else {
+            Vec::new()
+        };
+        let size = if n.is_dir { children.iter().map(|c| c.size).sum() } else { n.size };
+        RawNode { name: n.name.to_string(), size, mtime: n.mtime, is_dir: n.is_dir, children }
     }
 
     pub fn file_color(&self, n: &Node) -> Color32 {

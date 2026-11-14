@@ -35,6 +35,8 @@ pub struct ScanJob {
     pub started: Instant,
     /// Used bytes of the drive, when a whole drive is scanned (for a progress estimate).
     pub expected: Option<u64>,
+    /// Re-scan of one folder of an existing tree: cancelling keeps the previous result.
+    pub rescan: bool,
 }
 
 /// Size a file is counted with.
@@ -157,5 +159,46 @@ pub fn start(path: PathBuf, expected: Option<u64>, ctx: egui::Context) -> ScanJo
             ctx.request_repaint();
         });
     }
-    ScanJob { path, progress, result, started: Instant::now(), expected }
+    ScanJob { path, progress, result, started: Instant::now(), expected, rescan: false }
+}
+
+/// Re-scans folder `target` of `old` and splices the result into a rebuilt tree.
+/// If cancelled, `old` is handed back unchanged.
+pub fn start_rescan(old: Tree, target: u32, ctx: egui::Context) -> ScanJob {
+    let progress = Arc::new(Progress::default());
+    let result = Arc::new(Mutex::new(None));
+    let path = old.path(target);
+    let expected = Some(old.node(target).size);
+    {
+        let p = progress.clone();
+        let r = result.clone();
+        let path = path.clone();
+        std::thread::spawn(move || {
+            let md = fs::metadata(&path).ok();
+            let mtime = md.as_ref().map(|m| to_secs(m.modified())).unwrap_or(0);
+            // Stay on the file system of the original scan root (like the full scan does).
+            let dev = fs::metadata(&old.root_path)
+                .ok()
+                .or(md)
+                .as_ref()
+                .map(device_id)
+                .unwrap_or(0);
+            let raw = scan_dir(&path, String::new(), mtime, dev, &p);
+            let tree = if p.cancel.load(Relaxed) {
+                old
+            } else {
+                p.building.store(true, Relaxed);
+                ctx.request_repaint();
+                let errors = old.errors.max(p.errors.load(Relaxed));
+                let spliced = old.splice(target, raw);
+                let (root_path, secs, cancelled) = (old.root_path.clone(), old.scan_secs, old.cancelled);
+                std::thread::spawn(move || drop(old));
+                Tree::build(spliced, root_path, secs, errors, cancelled)
+            };
+            *r.lock().unwrap() = Some(tree);
+            p.done.store(true, Relaxed);
+            ctx.request_repaint();
+        });
+    }
+    ScanJob { path, progress, result, started: Instant::now(), expected, rescan: true }
 }

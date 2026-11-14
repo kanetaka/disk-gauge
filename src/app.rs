@@ -28,6 +28,8 @@ enum RightTab {
 
 enum Action {
     Scan(PathBuf),
+    /// Re-scan one folder of the current tree.
+    Rescan(u32),
     Select(u32),
     Toggle(u32),
     Zoom(u32),
@@ -41,8 +43,17 @@ enum Action {
     CollapseAll,
 }
 
+/// View state saved by path while a folder is re-scanned (node ids change on rebuild).
+struct SavedView {
+    view_root: PathBuf,
+    selected: Option<PathBuf>,
+    expanded: Vec<PathBuf>,
+    highlight_ext: Option<String>,
+}
+
 pub struct App {
     drives: Vec<DriveInfo>,
+    saved_view: Option<SavedView>,
     path_input: String,
     scan: Option<ScanJob>,
     tree: Option<Tree>,
@@ -97,6 +108,7 @@ impl App {
         setup_style(&cc.egui_ctx);
         let mut app = Self {
             drives: drives::list(),
+            saved_view: None,
             path_input: String::new(),
             scan: None,
             tree: None,
@@ -142,6 +154,45 @@ impl App {
         self.scan = Some(scan::start(path, expected, ctx.clone()));
     }
 
+    fn start_rescan(&mut self, id: u32, ctx: &egui::Context) {
+        if self.scan.is_some() {
+            return;
+        }
+        let Some(tree) = &self.tree else { return };
+        if id == 0 {
+            self.start_scan(tree.root_path.clone(), ctx);
+            return;
+        }
+        if !tree.node(id).is_dir || !tree.path(id).is_dir() {
+            return;
+        }
+        self.saved_view = Some(SavedView {
+            view_root: tree.path(self.view_root),
+            selected: (self.selected != NONE).then(|| tree.path(self.selected)),
+            expanded: self.expanded.iter().map(|&e| tree.path(e)).collect(),
+            highlight_ext: self.highlight_ext.map(|e| tree.exts[e as usize].name.clone()),
+        });
+        let tree = self.tree.take().unwrap();
+        self.treemap = None;
+        self.sunburst = None;
+        self.analysis = None;
+        self.scan = Some(scan::start_rescan(tree, id, ctx.clone()));
+    }
+
+    /// Re-applies the view state saved by [`Self::start_rescan`] to the rebuilt tree.
+    fn restore_view(&mut self, saved: SavedView) {
+        let Some(tree) = &self.tree else { return };
+        self.view_root = tree.find(&saved.view_root).unwrap_or(0);
+        self.selected = saved.selected.and_then(|p| tree.find(&p)).unwrap_or(NONE);
+        self.expanded = saved.expanded.iter().filter_map(|p| tree.find(p)).collect();
+        self.expanded.insert(0);
+        self.highlight_ext =
+            saved.highlight_ext.and_then(|name| tree.exts.iter().position(|e| e.name == name)).map(|i| i as u16);
+        if self.selected != NONE {
+            self.scroll_to_selected = true;
+        }
+    }
+
     fn poll_scan(&mut self) {
         let done = self.scan.as_ref().is_some_and(|j| j.progress.done.load(Relaxed));
         if !done {
@@ -149,9 +200,15 @@ impl App {
         }
         let job = self.scan.take().unwrap();
         let tree = job.result.lock().unwrap().take();
+        let saved = self.saved_view.take();
         if let Some(t) = tree {
             self.tree = Some(t);
             self.generation += 1;
+            if let (true, Some(saved)) = (job.rescan, saved) {
+                self.restore_view(saved);
+                self.drives = drives::list();
+                return;
+            }
             self.view_root = 0;
             self.selected = NONE;
             self.highlight_ext = None;
@@ -188,6 +245,7 @@ impl App {
     fn apply(&mut self, a: Action, ctx: &egui::Context) {
         match a {
             Action::Scan(p) => self.start_scan(p, ctx),
+            Action::Rescan(id) => self.start_rescan(id, ctx),
             Action::Select(id) => self.select(id),
             Action::Toggle(id) => {
                 if !self.expanded.remove(&id) {
@@ -404,7 +462,8 @@ impl App {
                 let cur = p.current.lock().map(|g| g.clone()).unwrap_or_default();
                 ui.label(RichText::new(util::truncate_start(&cur, 72)).size(11.5).color(Color32::from_gray(120)));
                 ui.add_space(14.0);
-                if ui.add_enabled(!cancelling && !building, egui::Button::new("中止（途中結果を表示）")).clicked() {
+                let cancel_label = if job.rescan { "中止（再解析前の結果に戻す）" } else { "中止（途中結果を表示）" };
+                if ui.add_enabled(!cancelling && !building, egui::Button::new(cancel_label)).clicked() {
                     p.cancel.store(true, Relaxed);
                 }
             });
@@ -736,6 +795,10 @@ fn node_menu(ui: &mut Ui, tree: &Tree, id: u32, actions: &mut Vec<Action>) {
     ui.label(RichText::new(fmt_size(n.size)).color(ACCENT));
     ui.separator();
     if n.is_dir {
+        if ui.button("フォルダ再解析").on_hover_text("このフォルダ以下をもう一度解析して結果を更新します").clicked() {
+            actions.push(Action::Rescan(id));
+            ui.close_menu();
+        }
         if ui.button("このフォルダを表示").clicked() {
             actions.push(Action::Zoom(id));
             ui.close_menu();
