@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DiskGauge
+GenericName=Disk Usage Analyzer
+GenericName[ja]=ディスク使用量アナライザー
+Comment=Visualize disk usage with treemap and sunburst
+Comment[ja]=ディスク使用量をツリーマップ／サンバーストで可視化
+Exec=DiskGauge
+Icon=diskgauge
+Terminal=false
+Categories=Utility;System;Filesystem;
+StartupWMClass=diskgauge

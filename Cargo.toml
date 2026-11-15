@@ -4,6 +4,7 @@ version = "2.0.0"
 edition = "2024"
 description = "Disk usage visualizer"
 license = "MIT"
+build = "build.rs"
 
 [[bin]]
 name = "DiskGauge"
@@ -18,6 +19,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [target.'cfg(not(windows))'.dependencies]
 sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
 
@@ -26,3 +30,11 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# macOS の .app バンドル作成用（cargo install cargo-bundle → cargo bundle --release）
+[package.metadata.bundle]
+name = "DiskGauge"
+identifier = "io.github.kanetaka.diskgauge"
+icon = ["assets/icon/icon.icns", "assets/icon/linux/hicolor/512x512/apps/diskgauge.png"]
+category = "public.app-category.utilities"
+short_description = "Disk usage visualizer"

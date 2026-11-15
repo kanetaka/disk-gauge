@@ -49,6 +49,29 @@ cargo build --release
 
 リリースビルドの実行ファイルは `target/release/DiskGauge`（Windows では `DiskGauge.exe`）に出力されます。Windows のリリースビルドではコンソールウィンドウは表示されません。
 
+### アプリアイコン
+
+アイコンは `assets/icon/` にあり、OS ごとに次のように使われます。
+
+| OS | 使われ方 | ファイル |
+| --- | --- | --- |
+| Windows | `build.rs` が `DiskGauge.exe` に埋め込み（エクスプローラー・ショートカット）。ウィンドウ／タスクバーは実行時に設定 | `icon.ico`（16〜256px）、`icon-256.png` |
+| macOS | 実行時に Dock アイコンを設定。`.app` バンドルは `cargo bundle --release`（[cargo-bundle](https://github.com/burtonageo/cargo-bundle)）で作成 | `icon.icns`、`icon-macos-512.png` |
+| Linux | 実行時にウィンドウアイコンを設定。デスクトップ環境のメニューに出すには下記のとおりインストール | `linux/` 以下 |
+
+Windows で exe へのアイコン埋め込みには、Visual Studio Build Tools（Windows SDK）に含まれる `rc.exe` を使います。見つからない場合は警告を出してアイコンなしでビルドを続けます。
+
+Linux でアプリメニューにアイコン付きで登録する例（ユーザー単位）:
+
+```sh
+cp target/release/DiskGauge ~/.local/bin/
+cp -r assets/icon/linux/hicolor ~/.local/share/icons/
+cp assets/icon/linux/diskgauge.desktop ~/.local/share/applications/
+gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null || true
+```
+
+元データは `assets/icon/icon.svg`（macOS 用は `icon-macos.svg`）です。
+
 ### Linux での追加要件
 
 eframe のビルド・実行には X11 / Wayland 関連の開発パッケージが必要になる場合があります。また、日本語表示のために Noto Sans CJK や IPA フォントなどの日本語フォントをインストールしてください（見つからない場合は `fc-match` で検索します）。
@@ -76,7 +99,9 @@ eframe のビルド・実行には X11 / Wayland 関連の開発パッケージ�
 
 | ファイル | 役割 |
 | --- | --- |
-| `src/main.rs` | エントリーポイント・ウィンドウ設定 |
+| `src/main.rs` | エントリーポイント・ウィンドウ設定（アイコン含む） |
+| `build.rs` | Windows 実行ファイルへのアイコン埋め込み |
+| `assets/icon/` | アプリアイコン（SVG / ICO / ICNS / PNG、Linux 用 .desktop） |
 | `src/app.rs` | UI 全体（上部バー、ツリー、右パネル、可視化、ステータスバー） |
 | `src/scan.rs` | 並列ディレクトリスキャンと進捗管理 |
 | `src/tree.rs` | スキャン結果のフラットなツリー構造と集計 |
